@@ -54,10 +54,7 @@ class ColorTracking(Node):
         self.state = "charge"
 
     def lidar_callback(self, data):
-        """Process Lidar data for wall detection and navigation"""
-        if self.at_end or not self.first_attempt:
-            return
-        
+        """Process Lidar data for wall detection and navigation"""       
         self.lidar_data = data.ranges 
 
         if self.state == "center":
@@ -122,8 +119,6 @@ class ColorTracking(Node):
 
     def listener_callback(self, data):
         """ Process camera input and decide movement. """
-        if self.start:
-        	return
         current_frame = self.bridge.imgmsg_to_cv2(data, desired_encoding='bgr8')
 
         # Convert BGR to LAB color space
