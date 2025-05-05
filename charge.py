@@ -25,12 +25,21 @@ GREEN_LOWER = [47, 0, 135]
 PURPLE_UPPER = [86, 176, 138]
 PURPLE_LOWER = [0, 148, 104]
 
+TEAM_COLOR = "purple"
+GOAL_UPPER = PURPLE_UPPER if TEAM_COLOR == "purple" else GREEN_UPPER
+GOAL_LOWER = PURPLE_LOWER if TEAM_COLOR == "purple" else GREEN_LOWER
+
+CENTER_LIDAR_TOLERANCE = 0.05
+
 class ColorTracking(Node):
     def __init__(self, name):
         super().__init__(name)
 
         # ROS2 publishers and subscribers
         self.cmd_vel = self.create_publisher(Twist, 'controller/cmd_vel', 1)
+
+        self.lidar_sub = self.create_subscription(
+            LaserScan, 'scan_raw', self.lidar_callback, 1)
         
         self.start = True
         
@@ -42,6 +51,74 @@ class ColorTracking(Node):
         self.start = False
         self.charge = False
         self.bridge = CvBridge()
+        self.state = "charge"
+
+    def lidar_callback(self, data):
+        """Process Lidar data for wall detection and navigation"""
+        if self.at_end or not self.first_attempt:
+            return
+        
+        self.lidar_data = data.ranges 
+
+        if self.state == "center":
+            self.move_to_center()
+        
+    def move_to_center(self):
+        if not self.lidar_data or len(self.lidar_data) < 360:
+            return []
+
+        angle_increment = 2 * np.pi / len(self.lidar_data)
+        direction_angles = {
+            "E": -np.pi / 2, #right
+            "N": 0, #forward
+            "W": np.pi / 2, #left
+            "S": np.pi #backward
+        }
+
+        right_distance = 0.0
+        left_distance = 0.0
+        front_distance = 0.0
+        back_distance = 0.0
+
+        for direction, angle in direction_angles.items():
+            range_deg = 15
+            range_rad = np.deg2rad(range_deg)
+            range_indices = int(range_rad / angle_increment)
+            center_index = int((angle % (2 * np.pi)) / angle_increment)
+            indices = [(center_index + i) % len(self.lidar_data) for i in range(-range_indices, range_indices + 1)]
+            distances = [self.lidar_data[i] for i in indices if not np.isnan(self.lidar_data[i])]
+            if distances:
+                if direction == "E":
+                    right_distance = min(distances)
+                elif direction == "N":
+                    front_distance = min(distances)
+                elif direction == "S":
+                    back_distance = min(distances)
+                elif direction == "W":
+                    left_distance = min(distances)
+
+        in_center = True
+
+        twist = Twist()
+        
+        if abs(left_distance - right_distance) > CENTER_LIDAR_TOLERANCE:
+            in_center = False
+            if left_distance > right_distance:
+                twist.linear.y = -0.2
+            else:
+                twist.linear.y = 0.2
+
+        if abs(front_distance - back_distance) > CENTER_LIDAR_TOLERANCE:
+            in_center = False
+            if front_distance > back_distance:
+                twist.linear.x = 0.2
+            else:
+                twist.linear.x = -0.2
+
+        self.cmd_vel.publish(twist)
+
+        if in_center:
+            self.state = "return"
 
     def listener_callback(self, data):
         """ Process camera input and decide movement. """
@@ -53,7 +130,7 @@ class ColorTracking(Node):
         lab_frame = cv2.cvtColor(current_frame, cv2.COLOR_BGR2LAB)
         blurred_frame = cv2.GaussianBlur(lab_frame, (5, 5), 0)
 
-        # Define LAB color range for detecting neon orange
+        # Define LAB color range for detecting red
         lower_bound = np.array(RED_LOWER)
         upper_bound = np.array(RED_UPPER)
 
@@ -65,28 +142,34 @@ class ColorTracking(Node):
 
         twist = Twist()
 
-        # Check if we need to move away from a wall
-
+        # Check if we can charge red
         if centroid_x is not None and centroid_y is not None:
             # Target detected: Align and move forward
             image_center_x = current_frame.shape[1] // 2
             error_x = centroid_x - image_center_x
-
             
             if abs(error_x) < CENTER_TOLERANCE:
                 self.charge = True
            
             twist.angular.z = -error_x * TURNING_SPEED  # Proportional turn
-            	
-        else:
-            # No target detected: Rotate to scan for opponent
-            twist.angular.z = 1.25
+            self.state = "charge"
+        elif self.state == "charge":
+            self.state = "center"
+            twist.angular.z = 0.0
             self.charge = False
+        # elif self.state == "center":
+        #     self.state = "return"
+        #     twist.angular.z = 0.0
+        #     self.charge = False
+        # elif self.state == "return":
+        #     self.state = "spin"
+        #     # No target detected: Rotate to scan for opponent
+        #     twist.angular.z = 1.25
+        #     self.charge = False
             
         twist.linear.x = ATTACK_SPEED if self.charge else 0.0
 
         self.cmd_vel.publish(twist)
-        
         
 
     def get_color_centroid(self, mask):
