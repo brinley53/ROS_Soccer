@@ -148,23 +148,52 @@ class ColorTracking(Node):
            
             twist.angular.z = -error_x * TURNING_SPEED  # Proportional turn
             self.state = "charge"
+            twist.linear.x = ATTACK_SPEED if self.charge else 0.0
+            self.cmd_vel.publish(twist)
         elif self.state == "charge":
             self.state = "center"
-            twist.angular.z = 0.0
             self.charge = False
         # elif self.state == "center":
         #     self.state = "return"
         #     twist.angular.z = 0.0
         #     self.charge = False
-        # elif self.state == "return":
-        #     self.state = "spin"
-        #     # No target detected: Rotate to scan for opponent
-        #     twist.angular.z = 1.25
-        #     self.charge = False
-            
-        twist.linear.x = ATTACK_SPEED if self.charge else 0.0
+        elif self.state == "return":
+            # return to goal
+            # find goal color
+            returning = False
+            lower_bound = np.array(GOAL_LOWER)
+            upper_bound = np.array(GOAL_UPPER)
 
-        self.cmd_vel.publish(twist)
+            # Create a binary mask for detected color
+            mask = cv2.inRange(blurred_frame, lower_bound, upper_bound)
+
+            # Get centroid of detected object
+            centroid_x, centroid_y = self.get_color_centroid(mask)
+
+            if centroid_x is not None and centroid_y is not None:
+                # Target detected: Align and move forward
+                image_center_x = current_frame.shape[1] // 2
+                error_x = centroid_x - image_center_x
+                
+                if abs(error_x) < CENTER_TOLERANCE:
+                    returning = True
+                
+                twist.angular.z = -error_x * TURNING_SPEED  # Proportional turn
+            else:
+                # twist to find goal
+                twist.angular.z = 1.25
+                self.state = "charge"
+
+            twist.linear.x = MOVING_SPEED if returning else 0.0
+
+            self.cmd_vel.publish(twist)
+
+        elif self.state == "spin":
+            # No target detected: Rotate to scan for ball
+            twist.angular.z = 1.25
+            self.charge = False
+            twist.linear.x = 0.0
+            self.cmd_vel.publish(twist)
         
 
     def get_color_centroid(self, mask):
