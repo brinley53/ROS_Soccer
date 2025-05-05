@@ -10,6 +10,11 @@ from cv_bridge import CvBridge
 from sensor_msgs.msg import Image, LaserScan
 from geometry_msgs.msg import Twist
 import time
+import threading  # 
+import sys  # 
+import select  # 
+import termios  # 
+import tty  # 
 
 # Constants
 TURNING_SPEED = 0.3 / 100
@@ -55,7 +60,9 @@ class ColorTracking(Node):
         self.state = "charge"
 
     def lidar_callback(self, data):
-        """Process Lidar data for wall detection and navigation"""       
+        """Process Lidar data for wall detection and navigation"""
+        if not self.active:  # 
+            return  # 
         self.lidar_data = data.ranges 
 
         if self.state == "center":
@@ -120,6 +127,8 @@ class ColorTracking(Node):
 
     def listener_callback(self, data):
         """ Process camera input and decide movement. """
+        if not self.active:  # 
+            return  # 
         current_frame = self.bridge.imgmsg_to_cv2(data, desired_encoding='bgr8')
 
         # Convert BGR to LAB color space
@@ -218,12 +227,34 @@ class ColorTracking(Node):
         centroid_y = int(M["m01"] / M["m00"])
 
         return centroid_x, centroid_y
-
+        
+def keyboard_listener(node):  # 
+    print("Press ENTER to start, 'p' to pause, 'q' to quit.")  # 
+    tty.setcbreak(sys.stdin.fileno())  # 
+    while not node.shutdown_requested:  # 
+        if select.select([sys.stdin], [], [], 0.1)[0]:  # 
+            ch = sys.stdin.read(1)  # 
+            if ch == '\n':  # 
+                print("Starting...")  # 
+                node.active = True  # 
+            elif ch == 'p':  # 
+                print("Paused.")  # 
+                node.active = False  # 
+            elif ch == 'q':  # 
+                print("Quitting...")  # 
+                node.shutdown_requested = True  # 
+                rclpy.shutdown()  # 
+                
 def main(args=None):
     rclpy.init(args=args)
     color_tracking_node = ColorTracking('color_tracking_node')
+
+    listener_thread = threading.Thread(target=keyboard_listener, args=(color_tracking_node,), daemon=True)  # 
+    listener_thread.start()  # 
+    
     try:
-        rclpy.spin(color_tracking_node)
+        while rclpy.ok() and not color_tracking_node.shutdown_requested:  # 
+            rclpy.spin_once(color_tracking_node, timeout_sec=0.1)  # 
     except KeyboardInterrupt:
         color_tracking_node.get_logger().info("Keyboard Interrupt (Ctrl+C): Stopping node.")
     finally:
