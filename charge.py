@@ -62,6 +62,7 @@ class ColorTracking(Node):
     def lidar_callback(self, data):
         """Process Lidar data for wall detection and navigation"""
         if not self.active:  # 
+            self.cmd_vel.publish(Twist())
             return  # 
         self.lidar_data = data.ranges 
 
@@ -128,6 +129,7 @@ class ColorTracking(Node):
     def listener_callback(self, data):
         """ Process camera input and decide movement. """
         if not self.active:  # 
+            self.cmd_vel.publish(Twist())
             return  # 
         current_frame = self.bridge.imgmsg_to_cv2(data, desired_encoding='bgr8')
 
