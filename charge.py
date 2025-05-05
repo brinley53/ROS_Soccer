@@ -58,7 +58,10 @@ class ColorTracking(Node):
         self.charge = False
         self.bridge = CvBridge()
         self.state = "charge"
+        self.lidar_data = []
 
+        self.active = False  # 
+        self.shutdown_requested = False  # 
     def lidar_callback(self, data):
         """Process Lidar data for wall detection and navigation"""
         if not self.active:  # 
