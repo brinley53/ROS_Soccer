@@ -18,10 +18,10 @@ import tty  #
 
 # Constants
 TURNING_SPEED = 0.3 / 100
-MOVING_SPEED = 0.1
+MOVING_SPEED = 0.5
 TURN_SPEED = 0.5  # Speed for turning away from walls
 CENTER_TOLERANCE = 20  # Error margin for "centered" opponent
-WALL_DISTANCE = 0.25  # Minimum distance from wall (meters) (4 in ~ 0.1 m)
+WALL_DISTANCE = 0.3  # Minimum distance from wall (meters) (4 in ~ 0.1 m)
 ATTACK_SPEED = 0.6  # Increased attack speed
 MIN_CONTOUR_SIZE = 200 
 RED_UPPER = [92, 255, 155] 
@@ -35,7 +35,7 @@ TEAM_COLOR = "purple"
 GOAL_UPPER = PURPLE_UPPER if TEAM_COLOR == "purple" else GREEN_UPPER
 GOAL_LOWER = PURPLE_LOWER if TEAM_COLOR == "purple" else GREEN_LOWER
 
-CENTER_LIDAR_TOLERANCE = 0.05
+CENTER_LIDAR_TOLERANCE = 0.25
 
 class ColorTracking(Node):
     def __init__(self, name):
@@ -57,16 +57,20 @@ class ColorTracking(Node):
         self.start = False
         self.charge = False
         self.bridge = CvBridge()
-        self.state = "charge"
+        self.state = "spin"
         self.lidar_data = []
 
         self.active = False  # 
         self.shutdown_requested = False  # 
+
     def lidar_callback(self, data):
         """Process Lidar data for wall detection and navigation"""
         if not self.active:  # 
             self.cmd_vel.publish(Twist())
             return  # 
+        if self.state != "center" and self.state != "return""
+            return
+        
         self.lidar_data = data.ranges 
 
         if self.state == "center":
@@ -113,16 +117,16 @@ class ColorTracking(Node):
         if abs(left_distance - right_distance) > CENTER_LIDAR_TOLERANCE:
             in_center = False
             if left_distance > right_distance:
-                twist.linear.y = -0.2
+                twist.linear.y = -0.3
             else:
-                twist.linear.y = 0.2
+                twist.linear.y = 0.3
 
         if abs(front_distance - back_distance) > CENTER_LIDAR_TOLERANCE:
             in_center = False
             if front_distance > back_distance:
-                twist.linear.x = 0.2
+                twist.linear.x = 0.3
             else:
-                twist.linear.x = -0.2
+                twist.linear.x = -0.3
 
         self.cmd_vel.publish(twist)
 
@@ -153,7 +157,7 @@ class ColorTracking(Node):
         twist = Twist()
 
         # Check if we can charge red
-        if centroid_x is not None and centroid_y is not None:
+        if centroid_x is not None and centroid_y is not None and self.state == "spin":
             # Target detected: Align and move forward
             image_center_x = current_frame.shape[1] // 2
             error_x = centroid_x - image_center_x
@@ -162,12 +166,9 @@ class ColorTracking(Node):
                 self.charge = True
            
             twist.angular.z = -error_x * TURNING_SPEED  # Proportional turn
-            self.state = "charge"
+            self.state = "center"
             twist.linear.x = ATTACK_SPEED if self.charge else 0.0
             self.cmd_vel.publish(twist)
-        elif self.state == "charge":
-            self.state = "center"
-            self.charge = False
         elif self.state == "return":
             # return to goal
 
@@ -192,14 +193,13 @@ class ColorTracking(Node):
                 image_center_x = current_frame.shape[1] // 2
                 error_x = centroid_x - image_center_x
                 
-                if abs(error_x) < CENTER_TOLERANCE:
+                if abs(error_x) < 100:
                     returning = True
                 
                 twist.angular.z = -error_x * TURNING_SPEED  # Proportional turn
             else:
                 # twist to find goal
                 twist.angular.z = 1.25
-                self.state = "charge"
 
             twist.linear.x = MOVING_SPEED if returning else 0.0
 
