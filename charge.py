@@ -21,7 +21,7 @@ TURNING_SPEED = 0.3 / 100
 MOVING_SPEED = 0.5
 TURN_SPEED = 0.5  # Speed for turning away from walls
 CENTER_TOLERANCE = 20  # Error margin for "centered" opponent
-WALL_DISTANCE = 0.3  # Minimum distance from wall (meters) (4 in ~ 0.1 m)
+WALL_DISTANCE = 0.25  # Minimum distance from wall (meters) (4 in ~ 0.1 m)
 ATTACK_SPEED = 0.6  # Increased attack speed
 MIN_CONTOUR_SIZE = 200 
 RED_UPPER = [92, 255, 155] 
@@ -172,11 +172,6 @@ class ColorTracking(Node):
         elif self.state == "return":
             # return to goal
 
-            # check to see if we're at the goal
-            if min(self.lidar_data) < WALL_DISTANCE:
-                self.state = "spin"
-                return
-
             # find goal color
             returning = False
             lower_bound = np.array(GOAL_LOWER)
@@ -197,6 +192,10 @@ class ColorTracking(Node):
                     returning = True
                 
                 twist.angular.z = -error_x * TURNING_SPEED  # Proportional turn
+                # check to see if we're at the goal
+                if self.lidar_data[0] < WALL_DISTANCE:
+                    self.state = "spin"
+                    return
             else:
                 # twist to find goal
                 twist.angular.z = 1.25
