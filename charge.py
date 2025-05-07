@@ -21,21 +21,21 @@ TURNING_SPEED = 0.3 / 100
 MOVING_SPEED = 0.5
 TURN_SPEED = 0.5  # Speed for turning away from walls
 CENTER_TOLERANCE = 20  # Error margin for "centered" opponent
-WALL_DISTANCE = 0.25  # Minimum distance from wall (meters) (4 in ~ 0.1 m)
 ATTACK_SPEED = 0.6  # Increased attack speed
-MIN_CONTOUR_SIZE = 200 
-RED_UPPER = [92, 255, 155] 
+MIN_CONTOUR_SIZE = 150
+WALL_DISTANCE = 0.25  # Minimum distance from wall (meters) (4 in ~ 0.1 m)
+RED_UPPER = [121, 255, 152] 
 RED_LOWER = [0, 149, 124]
 GREEN_UPPER = [255, 117, 255]
-GREEN_LOWER = [47, 0, 135]
+GREEN_LOWER = [47, 0, 120]
 PURPLE_UPPER = [86, 176, 138]
 PURPLE_LOWER = [0, 148, 104]
 
-TEAM_COLOR = "purple"
+TEAM_COLOR = "green"
 GOAL_UPPER = PURPLE_UPPER if TEAM_COLOR == "purple" else GREEN_UPPER
 GOAL_LOWER = PURPLE_LOWER if TEAM_COLOR == "purple" else GREEN_LOWER
 
-CENTER_LIDAR_TOLERANCE = 0.25
+CENTER_LIDAR_TOLERANCE = 0.35
 
 class ColorTracking(Node):
     def __init__(self, name):
@@ -59,23 +59,21 @@ class ColorTracking(Node):
         self.bridge = CvBridge()
         self.state = "spin"
         self.lidar_data = []
-
-        self.active = False  # 
-        self.shutdown_requested = False  # 
+        
+        self.active = False
+        self.shutdown_requested = False
 
     def lidar_callback(self, data):
-        """Process Lidar data for wall detection and navigation"""
+        """Process Lidar data for wall detection and navigation"""    
         if not self.active:  # 
-            self.cmd_vel.publish(Twist())
-            return  # 
-        if self.state != "center" and self.state != "return""
+            return  #    
+        if self.state != "center" and self.state != "return":
             return
-        
         self.lidar_data = data.ranges 
 
         if self.state == "center":
             self.move_to_center()
-        
+
     def move_to_center(self):
         if not self.lidar_data or len(self.lidar_data) < 360:
             return []
@@ -117,9 +115,9 @@ class ColorTracking(Node):
         if abs(left_distance - right_distance) > CENTER_LIDAR_TOLERANCE:
             in_center = False
             if left_distance > right_distance:
-                twist.linear.y = -0.3
-            else:
                 twist.linear.y = 0.3
+            else:
+                twist.linear.y = -0.3
 
         if abs(front_distance - back_distance) > CENTER_LIDAR_TOLERANCE:
             in_center = False
@@ -131,6 +129,7 @@ class ColorTracking(Node):
         self.cmd_vel.publish(twist)
 
         if in_center:
+            self.cmd_vel.publish(Twist())
             self.state = "return"
 
     def listener_callback(self, data):
@@ -166,11 +165,10 @@ class ColorTracking(Node):
                 self.charge = True
            
             twist.angular.z = -error_x * TURNING_SPEED  # Proportional turn
-            self.state = "center"
             twist.linear.x = ATTACK_SPEED if self.charge else 0.0
             self.cmd_vel.publish(twist)
         elif self.state == "return":
-            # return to goal
+            # return to gal
 
             # find goal color
             returning = False
@@ -194,6 +192,7 @@ class ColorTracking(Node):
                 twist.angular.z = -error_x * TURNING_SPEED  # Proportional turn
                 # check to see if we're at the goal
                 if self.lidar_data[0] < WALL_DISTANCE:
+                    self.cmd_vel.publish(Twist())
                     self.state = "spin"
                     return
             else:
@@ -203,12 +202,15 @@ class ColorTracking(Node):
             twist.linear.x = MOVING_SPEED if returning else 0.0
 
             self.cmd_vel.publish(twist)
-        elif self.state == "spin":
+        elif self.state == "spin" and self.charge == False:
             # No target detected: Rotate to scan for ball
             twist.angular.z = 1.25
             self.charge = False
             twist.linear.x = 0.0
             self.cmd_vel.publish(twist)
+        else:
+            self.charge = False
+            self.state = "center"
         
 
     def get_color_centroid(self, mask):
@@ -248,17 +250,15 @@ def keyboard_listener(node):  #
                 print("Quitting...")  # 
                 node.shutdown_requested = True  # 
                 rclpy.shutdown()  # 
-                
+
 def main(args=None):
     rclpy.init(args=args)
     color_tracking_node = ColorTracking('color_tracking_node')
-
     listener_thread = threading.Thread(target=keyboard_listener, args=(color_tracking_node,), daemon=True)  # 
     listener_thread.start()  # 
-    
     try:
         while rclpy.ok() and not color_tracking_node.shutdown_requested:  # 
-            rclpy.spin_once(color_tracking_node, timeout_sec=0.1)  # 
+            rclpy.spin_once(color_tracking_node, timeout_sec=0.1)  #
     except KeyboardInterrupt:
         color_tracking_node.get_logger().info("Keyboard Interrupt (Ctrl+C): Stopping node.")
     finally:
